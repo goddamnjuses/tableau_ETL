@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[132]:
+# In[372]:
 
 
 import pandas as pd
@@ -19,11 +19,12 @@ tableau_auth = TSC.TableauAuth('Admin', 'Boller555!')
 #server = TSC.Server('http://35.206.224.237/')
 server = TSC.Server('http://10.10.10.42/')
 project_id = '9cb8352b-7440-40ed-8956-a7f5211c5e2c'
-
+path='csv/'
 
 #client=MongoClient(host='192.168.4.200', port=27017,username="root", password="Boller555!")
 client=MongoClient('mongodb://dbreader:Ab12345@mongodb01.bollergame.local:27017,mongodb02.bollergame.local:27017,mongodb03.bollergame.local:27017/?replicaSet=rs0&readPreference=secondary')
 tdsx_list=['gift.tdsx',
+ 'item.tdsx',
  'login_game.tdsx',
  'login_point_member.tdsx',
  'login_purchase.tdsx',
@@ -31,52 +32,64 @@ tdsx_list=['gift.tdsx',
  'purchase_analysis.tdsx',
  'purchase_rank.tdsx',
  'transfer.tdsx']
+if os.path.exists(fr'{path}lastlogin.csv'):
+    update_time=pd.read_csv(fr'{path}lastlogin.csv',parse_dates=['time'],infer_datetime_format=True).time.max()-datetime.timedelta(hours=10)
+else:
+    update_time=datetime.datetime.now()-datetime.timedelta(days=10)
 
 
-# In[113]:
+# In[373]:
 
 
 def login():
     db = client['LogDB']['Log_LoginRecord']
-    pipeline = [{'$match':{"logintime":{"$gte": datetime.datetime(2021,5,15)}}},{'$project':{'_id':0,'accountid':1,'logintime':1,'logouttime':1,'channel':1,'vip':1}}]
-    #print('db connected')
+    pipeline = [{'$match':{'$or':[{"logintime":{"$gte": update_time}},{"logouttime":{"$gte": update_time}}]}},{'$project':{'_id':0,'accountid':1,'logintime':1,'logouttime':1,'channel':1,'vip':1}}]
     data = pd.DataFrame(list(db.aggregate(pipeline)))
     if len(data)==0:
+        pd.DataFrame([]).to_csv(fr'{path}login.csv',index=False)
         return
-    print(len(data))
     df=pd.DataFrame(
     [[aid,time,channel,vip] for aid,lt1,lt2,channel,vip in data.itertuples(index=False)
      for time in pd.date_range(lt1.floor('h'),(lt2+datetime.timedelta(seconds=30)).floor('h'),freq='h')],
      columns=['accountid','time','channel','vip'])
-    df=df.sort_values('vip', ascending=False).drop_duplicates(['accountid','time'])
     df.channel=df.channel.fillna("")
     df.channel=df.channel.replace('AppleStore','AppStore')
     df.channel=df.channel.replace('','Web')
     df.vip=df.vip.fillna(-1)
     df.vip=df.vip.astype('int')
     df.accountid=df.accountid.astype('str')
-    #print('data proccessed')
-    df.to_csv('login.csv',index=False)
-    #print('data saved')
-    return 
+    df.time=df.time+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}login.csv',low_memory=False,parse_dates=['time'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+    except:
+        pass
+    df=df.sort_values('vip', ascending=False).drop_duplicates(['accountid','time'])
+    df.to_csv(fr'{path}login.csv',index=False)
+    return df
 def lastlogin():
-    df=pd.read_csv('login.csv')
-    df=df.sort_values('time').drop_duplicates('accountid',keep='last')
-    df.to_csv('lastlogin.csv',index=False)
+    df=pd.read_csv(fr'{path}login.csv')
+    try:
+        df=df.sort_values('time').drop_duplicates('accountid',keep='last')
+    except:
+        pass
+    df.to_csv(fr'{path}lastlogin.csv',index=False)
     return
 
 
-# In[120]:
+# In[374]:
 
 
 def purchase():
     col = client['LogDB']['IAPLog']
     list_tmp = []
-    for i in col.find({},{'_id':1,'accountid':1,'amount':1,'itempackageid':1,'createtime':1,'paymethod':1,'paytype':1,'platform':1,'point':1,'successtime':1}):
+    for i in col.find({'$or':[{"createtime":{"$gte": update_time}},{"successtime":{"$gte": update_time}}]},{'_id':1,'accountid':1,'amount':1,'itempackageid':1,'createtime':1,'paymethod':1,'paytype':1,'platform':1,'point':1,'successtime':1}):
         list_tmp.append(i)
     if len(list_tmp)==0:
+        pd.DataFrame([]).to_csv(fr'{path}purchase.csv',index=False)
         return
     df = pd.DataFrame(list_tmp)
+    
     col = client['MemberDB']['ItemPackage']
     list_tmp = []
     for i in col.find({},{'_id':1,'name':1}):
@@ -90,13 +103,21 @@ def purchase():
     df.successtime=pd.to_datetime(df.successtime, errors = 'coerce')
     df.accountid=df.accountid.astype('str')
     df._id=df._id.astype('str')
-    df.to_csv('purchase.csv',index=False)
-    pd.DataFrame({'platform':df.platform.unique()}).to_csv('platform.csv',index=False)
-    pd.DataFrame({'itempackageid':df.itempackageid.unique()}).to_csv('itempackageid.csv',index=False)
-    return
+    df.createtime=df.createtime+datetime.timedelta(hours=8)
+    df.successtime=df.successtime+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}purchase.csv',low_memory=False,parse_dates=['createtime','successtime'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values('successtime', ascending=False).drop_duplicates(['_id'])
+    except:
+        pass
+    df.to_csv(fr'{path}purchase.csv',index=False)
+    pd.DataFrame({'platform':df.platform.unique()}).to_csv(fr'{path}platform.csv',index=False)
+    pd.DataFrame({'itempackageid':df.itempackageid.unique()}).to_csv(fr'{path}itempackageid.csv',index=False)
+    return 
 
 
-# In[117]:
+# In[375]:
 
 
 def point():
@@ -135,71 +156,91 @@ def point():
                 'item':{'$in':['1','2']}
             },
             {
-                 'time':{'$gte':datetime.datetime(2021,5,15)}
+                'time':{'$gte':update_time}
             }
         ]
-    },{'_id':1,'accountid':1,'time':1,'source':1,'count':1}):
+        },{'_id':1,'accountid':1,'time':1,'source':1,'count':1}):
         list_tmp.append(i)
-    if len(list_tmp)==0:
-        return
     df1 = pd.DataFrame(list_tmp)
-    df1.replace({"source": source},inplace=True)
-    df1['count']=df1['count'].astype(str).astype(float)
+    try:
+        df1.replace({"source": source},inplace=True)
+        df1['count']=df1['count'].astype(str).astype(float)
+    except:
+        pass
     col = client['GameRecord']['GameRecordGroup']
     list_tmp = []
-    for i in col.find({},{'_id':1,'accountid':1,'dayhour':1,'JP':1,'bet':1,'win':1}):
+    for i in col.find({'dayhour':{'$gte':int(update_time.strftime('%Y%m%d%H'))}},
+                      {'_id':0,'accountid':1,'dayhour':1,'JP':1,'bet':1,'win':1}):
         list_tmp.append(i)
-    if len(list_tmp)==0:
-        return
     df2 = pd.DataFrame(list_tmp)
-    df2.dayhour=pd.to_datetime(df2.dayhour, format='%Y%m%d%H')
-    df2=df2.rename(columns={'dayhour':'time','win':'贏分','bet':'押注','JP':'彩金'})
-    df2[['贏分','押注','彩金']]=df2[['贏分','押注','彩金']].astype(str).astype(float)
-    df2.押注=-df2.押注
-    df2=df2.melt(id_vars=['_id','accountid','time'],var_name='source',value_name='count')
-    df2=df2[df2['count']!=0.0]
+    try:
+        df2.dayhour=pd.to_datetime(df2.dayhour, format='%Y%m%d%H')
+        df2=df2.rename(columns={'dayhour':'time','win':'贏分','bet':'押注','JP':'彩金'})
+        df2[['贏分','押注','彩金']]=df2[['贏分','押注','彩金']].astype(str).astype(float)
+        df2.押注=-df2.押注
+        df2=df2.melt(id_vars=['accountid','time'],var_name='source',value_name='count')
+        df2=df2[df2['count']!=0.0]
+        df2=df2.groupby(by=['accountid','time','source'])['count'].sum().reset_index()
+        df2.accountid=df2.accountid.astype(str)
+        df2['_id']=df2['accountid']+df2.time.dt.strftime('%Y%m%d%H')+df2.source.str[0]
+    except:
+        pass
     df=pd.concat([df1,df2],ignore_index=True)
+    if len(df)==0:
+        pd.DataFrame([]).to_csv(fr'{path}point.csv',index=False)
+        return
     df.accountid=df.accountid.astype(str)
     df.source=df.source.astype(str)
     df._id=df._id.astype(str)
-    df.to_csv('point.csv',index=False)
-    pd.DataFrame({'source':df.source.unique()}).to_csv('source.csv',index=False)
+    df.time=df.time+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}point.csv',low_memory=False,parse_dates=['time'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values(by='count',key=abs, ascending=False).drop_duplicates(['_id'])
+    except:
+        pass
+    df.to_csv(fr'{path}point.csv',index=False)
+    pd.DataFrame({'source':df.source.unique()}).to_csv(fr'{path}source.csv',index=False)
     return
 
 
-# In[58]:
+# In[376]:
 
 
 def member():
+    t1=time.time()
     col = client['MemberDB']['AccountInfo']
     list_tmp = []
-    for i in col.find({},{'_id':1,'memberid':1,'nickname':1,'createtime':1,'lastlogintime':1}):
+    for i in col.find({'$or':[{"createtime":{"$gte": update_time}},{"lastlogintime":{"$gte": update_time}}]},
+                      {'_id':1,'memberid':1,'nickname':1,'createtime':1,'lastlogintime':1}):
         list_tmp.append(i)
     if len(list_tmp)==0:
+        pd.DataFrame([]).to_csv(fr'{path}member.csv',index=False)
         return
     df=pd.DataFrame(list_tmp)
-    df['_id']=df['_id'].astype('str')
+    t2=time.time()
     col = client['MemberDB']['MemberInformation']
     list_tmp = []
-    for i in col.find({},{'_id':1,'name':1,'phone':1,'email':1}):
+    for i in col.find({'_id':{'$in':df._id.to_list()}},{'_id':1,'name':1,'phone':1,'email':1}):
         list_tmp.append(i)
     df2=pd.DataFrame(list_tmp)
-    df2['_id']=df2['_id'].astype('str')
+    t3=time.time()
     col = client['MemberDB']['VIPLevel']
     list_tmp = []
-    for i in col.find({},{'_id':1,'viplevel':1}):
+    for i in col.find({'_id':{'$in':df._id.to_list()}},{'_id':1,'viplevel':1}):
         list_tmp.append(i)
     df3=pd.DataFrame(list_tmp)
-    df3['_id']=df3['_id'].astype('str')
+    t4=time.time()
     col = client['MemberDB']['CreateAccountInfo']
     list_tmp = []
-    for i in col.find({},{'_id':1,'channel':1,'type':1}):
+    for i in col.find({'_id':{'$in':df._id.to_list()}},{'_id':1,'channel':1,'type':1}):
         list_tmp.append(i)
+    t5=time.time()
     df4 = pd.DataFrame(list_tmp)
-    df4['_id']=df4['_id'].astype('str')
     df=df.merge(df2,how='left',on='_id')
     df=df.merge(df3,how='left',on='_id')
     df=df.merge(df4,how='left',on='_id')
+    df['_id']=df['_id'].astype('str')
     df.channel=df.channel.replace('AppleStore','AppStore')
     df.channel=df.channel.fillna("unknown")
     df.channel=df.channel.replace('','unknown')
@@ -211,47 +252,22 @@ def member():
     df.phone=df.phone.astype(str)
     df.lastlogintime=pd.to_datetime(df.lastlogintime, errors = 'coerce')
     df.rename(columns={'channel':'reg_channel','type':'reg_type'},inplace=True)
-    df.to_csv('member.csv',index=False)
-    pd.DataFrame({'reg_type':df.reg_type.unique()}).to_csv('reg_type.csv',index=False)
-    pd.DataFrame({'reg_channel':df.reg_channel.unique()}).to_csv('reg_channel.csv',index=False)
-    return
-
-
-# In[136]:
-
-
-def itemlog():
-    db = client['LogDB']['ItemLog']
-    print('itemlog:start')
-    db_filter1={'$and':[{'item':{'$nin':['1','2']}},{'time':{'$gte':datetime.datetime(2021,5,15)}}]}
-    db_filter2={'time':{'$gte':datetime.datetime(2021,5,15)}}
-    db_project={'_id':1,'accountid':1,'time':1,'source':1,'count':1,'item':1}
+    df.createtime=df.createtime+datetime.timedelta(hours=8)
+    df.lastlogintime=df.lastlogintime+datetime.timedelta(hours=8)
     try:
-        df = pd.DataFrame(list(db.find(db_filter1,db_project)))
-        print('first ok')
+        df_=pd.read_csv(fr'{path}member.csv',low_memory=False,parse_dates=['createtime','lastlogintime'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values('lastlogintime', ascending=False).drop_duplicates(['_id'])
     except:
-        try:
-            df=pd.DataFrame(list(db.find(db_filter2,db_project)))
-            print('second ok')
-        except:
-            try:
-                df=pd.DataFrame(list(db.find({},db_project)))
-                print('third ok')
-            except:
-                print('all failed')
-    if len(df)==0:
-        return
-    print(df.columns,len(df))
-    df=df[~df.item.isin(['1','2'])]
-    df['count']=df['count'].astype(str).astype(int)
-    df._id=df._id.astype(str)
-    df.accountid=df.accountid.astype(str)
-    df.item=df.item.astype(int)
-    df.to_csv('itemlog.csv',index=False)
+        pass
+    df.to_csv(fr'{path}member.csv',index=False)
+    pd.DataFrame({'reg_type':df.reg_type.unique()}).to_csv(fr'{path}reg_type.csv',index=False)
+    pd.DataFrame({'reg_channel':df.reg_channel.unique()}).to_csv(fr'{path}reg_channel.csv',index=False)
+    t6=time.time()
     return
 
 
-# In[71]:
+# In[377]:
 
 
 def game():
@@ -270,10 +286,11 @@ def game():
     groupid_dict={0:'娛樂廳',  1:'富貴廳',   2:'帝王廳'}
     col = client['GameRecord']['GameRecordGroup']
     list_tmp = []
-    for i in col.find({},{'_id':0, 'accountid':1, 'dayhour':1, 'gameid':1, 'gametype':1, 'groupid':1, 'seat':1,
+    for i in col.find({'dayhour':{'$gte':int(update_time.strftime('%Y%m%d%H'))}},{'_id':1, 'accountid':1, 'dayhour':1, 'gameid':1, 'gametype':1, 'groupid':1, 'seat':1,
            'JP':1, 'bet':1, 'win':1, 'useitem':1,'count':1}):
         list_tmp.append(i)
     if len(list_tmp)==0:
+        pd.DataFrame([]).to_csv(fr'{path}game.csv',index=False)
         return
     df = pd.DataFrame(list_tmp)
     df.dayhour=pd.to_datetime(df.dayhour,format='%Y%m%d%H')
@@ -288,33 +305,70 @@ def game():
     df['lasttime']=pd.to_datetime(df.lasttime, errors = 'coerce')
     df['count'].fillna(0,inplace=True)
     df['count']=df['count'].astype('int')
-    df.to_csv('game.csv',index=False)
-    pd.DataFrame({'groupid':list(set(groupid_dict.values()))}).to_csv('groupid.csv',index=False)
-    pd.DataFrame({'gameid':list(set(gameid_dict.values()))}).to_csv('gameid.csv',index=False)
+    df._id=df._id.astype(str)
+    df.time_play=df.time_play+datetime.timedelta(hours=8)
+    df.lasttime=df.lasttime+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}game.csv',low_memory=False,parse_dates=['time_play'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values('bet', ascending=False).drop_duplicates(['_id'])
+    except:
+        pass
+    df.to_csv(fr'{path}game.csv',index=False)
+    pd.DataFrame({'groupid':list(set(groupid_dict.values()))}).to_csv(fr'{path}groupid.csv',index=False)
+    pd.DataFrame({'gameid':list(set(gameid_dict.values()))}).to_csv(fr'{path}gameid.csv',index=False)
     return 
 
 
-# In[61]:
+# In[378]:
+
+
+def itemlog():
+    col = client['LogDB']['ItemLog']
+    df = pd.DataFrame(list(col.find({'$and':[{'item':{'$nin':['1','2']}},{'time':{'$gte':update_time}}]},{'_id':1,'accountid':1,'time':1,'source':1,'count':1,'item':1})))
+    if len(df)==0:
+        pd.DataFrame([]).to_csv(fr'{path}itemlog.csv',index=False)
+        return
+    df['count']=df['count'].astype(str).astype(int)
+    df._id=df._id.astype(str)
+    df.accountid=df.accountid.astype(str)
+    df.item=df.item.astype(int)
+    df.time=df.time+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}itemlog.csv',low_memory=False,parse_dates=['time'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.drop_duplicates(['_id'])
+    except:
+        df.to_csv(fr'{path}itemlog.csv',index=False)
+    return
+
+
+# In[379]:
 
 
 def id_list():
     df_idlist=pd.DataFrame({'accountid':['60a323ddafcfd1df52d350ea','5eb21433c6beb35764458c01', '5ff4354774edc59009cb3e61',
        '60a323ddafcfd1df52d350ea']})
-    df_idlist.to_csv('id_list.csv',index=False)
+    df_idlist.to_csv(fr'{path}id_list.csv',index=False)
     return
 
 
-# In[62]:
+# In[385]:
 
 
 def gift():
     db = client['MemberDB']['GiftTransferTable']
-    pipeline = [{"$unwind": "$items"} ,{'$project':{'_id':1,'transferid':1,'createtime':1,'transferaccountid':1,"receivemember":1,'status':1,'lastmodifydate':1,'items':1}}]
+    pipeline = [{'$match':
+                 {
+        '$or':[{"createtime":{"$gte": update_time}},{"lastmodifydate":{"$gte": update_time}}]
+                 }
+                },{"$unwind": "$items"} ,{'$project':{'_id':1,'transferid':1,'createtime':1,'transferaccountid':1,"receivemember":1,'status':1,'lastmodifydate':1,'items':1}}]
     df=pd.DataFrame(list(db.aggregate(pipeline)))
     if len(df)==0:
+        pd.DataFrame([]).to_csv(fr'{path}gift.csv',index=False)
         return
     df=df.join(pd.concat(pd.DataFrame.from_dict(i,orient='index') for i in df.pop('items')).reset_index())
-    df.rename(columns={'index':'itemid',0:'count'},inplace=True)
+    df.rename(columns={'index':'itemid',0:'count',"lastmodifydate":'lastmodifytime'},inplace=True)
     df._id=df._id.astype(str)
     df.itemid=df.itemid.astype(int)
     df.transferaccountid=df.transferaccountid.astype(str)
@@ -328,17 +382,26 @@ def gift():
     df.rece_inlist.fillna(0,inplace=True)
     df.tran_inlist.fillna(0,inplace=True)
     df[['tran_inlist','rece_inlist']]=df[['tran_inlist','rece_inlist']].astype(int)
-    df.to_csv('gift.csv',index=False)
-    return
+    df.createtime=df.createtime+datetime.timedelta(hours=8)
+    df.lastmodifytime=df.lastmodifytime+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}gift.csv',low_memory=False,parse_dates=['createtime','lastmodifytime'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values('lastmodifytime', ascending=False).drop_duplicates(['_id'])
+    except:
+        pass
+    df.to_csv(fr'{path}gift.csv',index=False)
+    return 
 
 
-# In[63]:
+# In[381]:
 
 
 def trans():
     db = client['MemberDB']['GiftTransferTable']
-    df=pd.DataFrame(list(db.find({},{'_id':1,'transferid':1,'createtime':1,'transferaccountid':1,"receivemember":1,"transferpoint":1,"fee":1,'status':1,'lastmodifydate':1})))
+    df=pd.DataFrame(list(db.find({'$or':[{"createtime":{"$gte": update_time}},{"lastmodifydate":{"$gte": update_time}}]},{'_id':1,'transferid':1,'createtime':1,'transferaccountid':1,"receivemember":1,"transferpoint":1,"fee":1,'status':1,'lastmodifydate':1})))
     if len(df)==0:
+        pd.DataFrame([]).to_csv(fr'{path}trans.csv',index=False)
         return    
     df._id=df._id.astype(str)
     df.transferaccountid=df.transferaccountid.astype(str)
@@ -347,19 +410,27 @@ def trans():
     df1['type']='transfer'
     df2=df[['_id', 'transferid', 'createtime', 'receivemember', 'transferpoint', 'fee','status', 'lastmodifydate']].rename(columns={'receivemember':'accountid'})
     df2['type']='receive'
-    df=pd.concat([df1,df2], ignore_index=True)
+    df=pd.concat([df1,df2], ignore_index=True).rename(columns={'lastmodifydate':'lastmodifytime'})
     df=df.merge(pd.read_csv('member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'accountid'}),on='accountid')
     df=df.merge(pd.read_csv('lastlogin.csv',low_memory=False)[['accountid','channel']],on='accountid')
     df[['fee','transferpoint']]=df[['fee','transferpoint']].astype(str).astype(float)
     df.loc[df['accountid'].isin(pd.read_csv('id_list.csv')['accountid']),'inlist']=1
     df.inlist.fillna(0,inplace=True)
     df.inlist=df.inlist.astype(int)
-    df.to_csv('trans.csv',index=False)
-    pd.DataFrame({'status':df.status.unique()}).to_csv('status.csv',index=False)
-    return
+    df.createtime=df.createtime+datetime.timedelta(hours=8)
+    df.lastmodifytime=df.lastmodifytime+datetime.timedelta(hours=8)
+    try:
+        df_=pd.read_csv(fr'{path}trans.csv',low_memory=False,parse_dates=['createtime','lastmodifytime'],infer_datetime_format=True)
+        df=pd.concat([df,df_],ignore_index=True)
+        df=df.sort_values('lastmodifytime', ascending=False).drop_duplicates(['_id'])
+    except:
+        pass
+    df.to_csv(fr'{path}trans.csv',index=False)
+    pd.DataFrame({'status':df.status.unique()}).to_csv(fr'{path}status.csv',index=False)
+    return 
 
 
-# In[64]:
+# In[382]:
 
 
 def table():
@@ -371,16 +442,17 @@ def table():
     #reg_channel=pd.DataFrame({'reg_channel':pd.read_csv('member.csv').reg_channel.unique()})
     #groupid=pd.DataFrame({'groupid':list(set(groupid_dict.values()))})
     #gameid=pd.DataFrame({'gameid':list(set(gameid_dict.values()))})
-    #item=pd.read_excel('item.xlsx')
+    item=pd.read_excel('item.xlsx')
     #platform=pd.DataFrame({'platform':df_purchase.platform.unique()})
     #itempackageid=pd.DataFrame({'itempackageid':df_purchase.itempackageid.unique()})
-    vip.to_csv('vip.csv',index=False)
-    channel.to_csv('channel.csv',index=False)
-    timetable.to_csv('timetable.csv',index=False)
+    vip.to_csv(fr'{path}vip.csv',index=False)
+    channel.to_csv(fr'{path}channel.csv',index=False)
+    timetable.to_csv(fr'{path}timetable.csv',index=False)
+    item.to_csv(fr'{path}item.csv',index=False)
     return
 
 
-# In[65]:
+# In[383]:
 
 
 def csv_to_hyper(hyper):
@@ -405,8 +477,8 @@ def csv_to_hyper(hyper):
     elif hyper=="gift.hyper":
         csv_list=['gift','timetable','vip','item','status']         
     for i in csv_list:
-        dict_df[i]=pd.read_csv(f'{i}.csv',low_memory=False,nrows=1)
-        dict_df[i]=pd.read_csv(f'{i}.csv',low_memory=False,parse_dates=[l for l in dict_df[i].columns if l.find('time')>-1],infer_datetime_format=True)    
+        dict_df[i]=pd.read_csv(fr'{path}{i}.csv',low_memory=False,nrows=1)
+        dict_df[i]=pd.read_csv(fr'{path}{i}.csv',low_memory=False,parse_dates=[l for l in dict_df[i].columns if l.find('time')>-1],infer_datetime_format=True)    
     pantab.frames_to_hyper(dict_df, hyper)     
     return
 def swap_hyper(hyper_name, tdsx_name, logger_obj=None):
@@ -428,42 +500,31 @@ def swap_hyper(hyper_name, tdsx_name, logger_obj=None):
     os.rename(tdsx_updated_name, tdsx_name)
 
 
-# In[66]:
+# In[384]:
 
 
 if __name__ == '__main__':
-    t1=time.time()
     print('start creating csv')
-    #itemlog()
-    id_list()
-    t2=time.time()
-    print(f'{t2-t1}:id_list.csv created')
-    purchase()
-    t3=time.time()
-    print(f'{t3-t1}:purchase.csv created')
     login()
-    t4=time.time()
-    print(f'{t4-t1}:login.csv created')
-    #t5=time.time()
-    #print(f'{t5-t1}:itemlog.csv created')
-    
+    print('login.csv created')
     lastlogin()
     member()
-    t6=time.time()
-    print(f'{t6-t1}:member.csv created')   
+    id_list()
+    purchase()
+    print('purchase.csv created')
     point()
-    print('point.csv created') 
     game()
-    t7=time.time()
-    print(f'{t7-t1}:game.csv created')
-    
+    itemlog()
+    print('itemlog.csv created')
     gift()
     trans()
-    print('trans.csv created')
     table()
-    for i in ['gift.hyper',  'login_game.hyper', 'login_point_member.hyper', 'login_purchase.hyper', 'member.hyper', 'purchase_analysis.hyper', 'purchase_rank.hyper', 'transfer.hyper']:
-        csv_to_hyper(i)
-        print (f'{i} is finished')
+    for i in ['gift.hyper',  'item.hyper', 'login_game.hyper', 'login_point_member.hyper', 'login_purchase.hyper', 'member.hyper', 'purchase_analysis.hyper', 'purchase_rank.hyper', 'transfer.hyper']:
+        try:
+            csv_to_hyper(i)
+        except:
+            print(f'{i}缺少資料')
+        #print (f'{i} is finished')
     print (pd.read_csv('login.csv').shape)
     for i in tdsx_list:
         swap_hyper(i.replace('tdsx','hyper'),i)    
@@ -474,4 +535,16 @@ if __name__ == '__main__':
         all_datasources, pagination_item = server.datasources.get()
         print("\nThere are {} datasources on site: ".format(pagination_item.total_available))
         print([datasource.name for datasource in all_datasources])
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
 
