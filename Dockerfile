@@ -3,6 +3,7 @@ COPY . /app
 
 WORKDIR /app
 
+RUN mkdir csv
 
 RUN pip install -r requirements.txt
 
