@@ -373,12 +373,12 @@ def gift():
     df.itemid=df.itemid.astype(int)
     df.transferaccountid=df.transferaccountid.astype(str)
     df.receivemember=df.receivemember.astype(str)
-    df=df.merge(pd.read_csv('member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'transferaccountid'}),on='transferaccountid').rename(columns={'memberid':'tran_memberid','nickname':'tran_nickname','viplevel':'tran_vip'})
-    df=df.merge(pd.read_csv('member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'receivemember'}),on='receivemember').rename(columns={'memberid':'rece_memberid','nickname':'rece_nickname','viplevel':'rece_vip'})
-    df=df.merge(pd.read_csv('lastlogin.csv')[['accountid','channel']].rename(columns={'accountid':'transferaccountid'}),on='transferaccountid').rename(columns={'channel':'tran_channel'})
-    df=df.merge(pd.read_csv('lastlogin.csv')[['accountid','channel']].rename(columns={'accountid':'receivemember'}),on='receivemember').rename(columns={'channel':'rece_channel'})
-    df.loc[df['transferaccountid'].isin(pd.read_csv('id_list.csv')['accountid']),'tran_inlist']=1
-    df.loc[df['receivemember'].isin(pd.read_csv('id_list.csv')['accountid']),'rece_inlist']=1
+    df=df.merge(pd.read_csv(fr'{path}member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'transferaccountid'}),on='transferaccountid').rename(columns={'memberid':'tran_memberid','nickname':'tran_nickname','viplevel':'tran_vip'})
+    df=df.merge(pd.read_csv(fr'{path}member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'receivemember'}),on='receivemember').rename(columns={'memberid':'rece_memberid','nickname':'rece_nickname','viplevel':'rece_vip'})
+    df=df.merge(pd.read_csv(fr'{path}lastlogin.csv')[['accountid','channel']].rename(columns={'accountid':'transferaccountid'}),on='transferaccountid').rename(columns={'channel':'tran_channel'})
+    df=df.merge(pd.read_csv(fr'{path}lastlogin.csv')[['accountid','channel']].rename(columns={'accountid':'receivemember'}),on='receivemember').rename(columns={'channel':'rece_channel'})
+    df.loc[df['transferaccountid'].isin(pd.read_csv(fr'{path}id_list.csv')['accountid']),'tran_inlist']=1
+    df.loc[df['receivemember'].isin(pd.read_csv(fr'{path}id_list.csv')['accountid']),'rece_inlist']=1
     df.rece_inlist.fillna(0,inplace=True)
     df.tran_inlist.fillna(0,inplace=True)
     df[['tran_inlist','rece_inlist']]=df[['tran_inlist','rece_inlist']].astype(int)
@@ -411,10 +411,10 @@ def trans():
     df2=df[['_id', 'transferid', 'createtime', 'receivemember', 'transferpoint', 'fee','status', 'lastmodifydate']].rename(columns={'receivemember':'accountid'})
     df2['type']='receive'
     df=pd.concat([df1,df2], ignore_index=True).rename(columns={'lastmodifydate':'lastmodifytime'})
-    df=df.merge(pd.read_csv('member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'accountid'}),on='accountid')
-    df=df.merge(pd.read_csv('lastlogin.csv',low_memory=False)[['accountid','channel']],on='accountid')
+    df=df.merge(pd.read_csv(fr'{path}member.csv',low_memory=False)[['_id','memberid','nickname','viplevel']].rename(columns={'_id':'accountid'}),on='accountid')
+    df=df.merge(pd.read_csv(fr'{path}lastlogin.csv',low_memory=False)[['accountid','channel']],on='accountid')
     df[['fee','transferpoint']]=df[['fee','transferpoint']].astype(str).astype(float)
-    df.loc[df['accountid'].isin(pd.read_csv('id_list.csv')['accountid']),'inlist']=1
+    df.loc[df['accountid'].isin(pd.read_csv(fr'{path}id_list.csv')['accountid']),'inlist']=1
     df.inlist.fillna(0,inplace=True)
     df.inlist=df.inlist.astype(int)
     df.createtime=df.createtime+datetime.timedelta(hours=8)
@@ -525,7 +525,6 @@ if __name__ == '__main__':
         except:
             print(f'{i}缺少資料')
         #print (f'{i} is finished')
-    print (pd.read_csv('login.csv').shape)
     for i in tdsx_list:
         swap_hyper(i.replace('tdsx','hyper'),i)    
     with server.auth.sign_in(tableau_auth):
